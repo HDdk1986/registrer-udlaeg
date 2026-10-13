@@ -3,133 +3,91 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#0b4f55" />
+    <meta name="theme-color" content="#0b6268" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Udlæg" />
     <title>Registrer udlæg</title>
-    <meta name="description" content="Mobil registrering af medarbejderudlæg." />
-    <meta property="og:title" content="Registrer udlæg" />
-    <meta property="og:description" content="Tag billeder af bonner og saml dem i én PDF klar til økonomi." />
-    <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Registrer udlæg" />
-    <meta name="twitter:description" content="Tag billeder af bonner og saml dem i én PDF klar til økonomi." />
+    <meta name="description" content="Enkel registrering af medarbejderudlæg." />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./icon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=6" />
+    <link rel="stylesheet" href="./styles.css?v=2" />
   </head>
   <body>
     <main class="app-shell">
       <header class="hero">
-        <div class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24" focusable="false">
-            <path d="M7 3h10a1 1 0 0 1 1 1v17l-3-2-3 2-3-2-3 2V4a1 1 0 0 1 1-1Z" />
-            <path d="M9 8h6M9 12h6M9 16h3" />
-          </svg>
-        </div>
+        <div class="brand-mark" aria-hidden="true">▤</div>
         <div>
-          <p class="eyebrow">Enkel registrering af medarbejderudlæg</p>
+          <p class="eyebrow">Mit medarbejderudlæg</p>
           <h1>Registrer udlæg</h1>
-          <p class="intro">Tag billeder af bonnen, udfyld oplysningerne og gør én samlet PDF klar til økonomi.</p>
+          <p class="intro">Udfyld oplysningerne og saml dine bonner i én PDF til økonomi.</p>
         </div>
       </header>
 
+      <section class="identity" aria-label="Medarbejder">
+        <div><span>Medarbejder</span><strong>Henrik D</strong></div>
+        <span class="area">SYD</span>
+      </section>
+
       <form id="expense-form" novalidate>
-        <section class="card" aria-labelledby="person-heading">
+        <section class="card" aria-labelledby="expense-heading">
           <div class="section-heading">
             <span class="step">1</span>
-            <div><h2 id="person-heading">Dig og konteringen</h2><p>Oplysningerne bruges i mailen til økonomi.</p></div>
+            <div><h2 id="expense-heading">Udlægget</h2><p>Vælg type, dato og skriv det præcise beløb.</p></div>
           </div>
 
           <label class="field">
-            <span>Din arbejdsmail</span>
-            <input type="email" name="email" autocomplete="email" inputmode="email" placeholder="navn@virksomhed.dk" required />
+            <span>Dit mobilnummer</span>
+            <input type="tel" name="mobile" inputmode="tel" autocomplete="tel" minlength="8" maxlength="20" placeholder="Fx 12 34 56 78" required />
+            <small>Gemmes kun på denne enhed og bruges i PDF'en.</small>
           </label>
-
-          <fieldset class="field">
-            <legend>Vedrører udlægget et selskab eller en afdeling?</legend>
-            <div class="segmented">
-              <label><input type="radio" name="entityType" value="company" checked /><span>Selskab</span></label>
-              <label><input type="radio" name="entityType" value="department" /><span>Afdeling</span></label>
-            </div>
-          </fieldset>
-
-          <label class="field" id="company-field">
-            <span>Selskabsnummer</span>
-            <select name="company">
-              <option value="">Vælg selskab</option>
-              <option>3</option><option>5</option><option>7</option><option>8</option><option>11</option>
-              <option>26</option><option>28</option><option>29</option><option>30</option><option>31</option>
-            </select>
-          </label>
-
-          <label class="field is-hidden" id="department-field">
-            <span>Afdelingsnummer</span>
-            <input type="number" name="department" inputmode="numeric" min="1" step="1" placeholder="Skriv afdelingsnummer" />
-          </label>
-        </section>
-
-        <section class="card" aria-labelledby="expense-heading">
-          <div class="section-heading">
-            <span class="step">2</span>
-            <div><h2 id="expense-heading">Udlægget</h2><p>Fortæl kort, hvad købet vedrører.</p></div>
-          </div>
 
           <label class="field">
             <span>Type af udlæg</span>
             <select name="expenseType" required>
               <option value="">Vælg type</option>
-              <option value="food">Forplejning</option>
-              <option value="course">Kursus</option>
-              <option value="parking">Parkering</option>
-              <option value="purchase">Indkøb</option>
-              <option value="transport">Transport</option>
+              <option value="catering">169439 - Forplejning</option>
+              <option value="caretaker_meeting">169440 - Viceværtmøder</option>
               <option value="other">Andet</option>
             </select>
           </label>
 
-          <label class="field is-hidden" id="meeting-field">
-            <span>Hvilket møde?</span>
-            <input type="text" name="meeting" placeholder="Fx Viceværtmøde Syd" />
-          </label>
-
-          <label class="field" id="description-field">
-            <span id="description-label">Hvad vedrører udlægget?</span>
-            <textarea name="description" rows="3" placeholder="Vælg først type af udlæg"></textarea>
-          </label>
-
           <label class="field">
-            <span>Dato</span>
-            <input type="date" name="date" required />
+            <span id="detail-label">Hvad vedrører udlægget?</span>
+            <textarea name="detail" rows="3" placeholder="Vælg først type" required></textarea>
           </label>
+
+          <div class="field-row">
+            <label class="field"><span>Dato</span><input type="date" name="date" required /></label>
+            <label class="field"><span>Beløb</span><span class="amount"><input type="text" name="amount" inputmode="decimal" placeholder="245,50" required /><b>kr.</b></span></label>
+          </div>
         </section>
 
         <section class="card" aria-labelledby="receipt-heading">
           <div class="section-heading">
-            <span class="step">3</span>
-            <div><h2 id="receipt-heading">Bonner og kvitteringer</h2><p>Tag billeder nu, eller vælg billeder fra telefonen.</p></div>
+            <span class="step">2</span>
+            <div><h2 id="receipt-heading">Bonner og kvitteringer</h2><p>Tag billeder nu, eller vælg dem fra telefonen.</p></div>
           </div>
-
           <label class="upload-zone" for="receipts">
             <span class="camera-icon" aria-hidden="true">＋</span>
             <strong>Tilføj billeder</strong>
-            <span>JPG, PNG eller billeder fra kameraet</span>
+            <small>JPG, PNG eller billeder fra kameraet</small>
           </label>
-          <input class="visually-hidden" id="receipts" type="file" name="receipts" accept="image/*" capture="environment" multiple />
+          <input class="visually-hidden" id="receipts" type="file" accept="image/*" capture="environment" multiple />
           <div id="receipt-list" class="receipt-list" aria-live="polite"></div>
         </section>
 
-        <div class="submit-wrap">
-          <p class="privacy-note">Billederne behandles kun på din enhed.</p>
+        <section class="submit-card">
+          <p><strong>Klar til økonomi?</strong><br /><span>PDF'en viser oplysningerne først og bonnerne bagefter.</span></p>
           <button class="primary-button" type="submit">Lav PDF og klargør mail</button>
-        </div>
+          <small>Billederne behandles kun på din enhed.</small>
+        </section>
       </form>
 
       <section id="result" class="result-panel is-hidden" aria-live="polite"></section>
     </main>
-    <script src="./app.js?v=6" defer></script>
+    <script src="./app.js?v=2" defer></script>
   </body>
 </html>

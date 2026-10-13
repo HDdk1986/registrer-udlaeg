@@ -1,7 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Registrer udlæg">
-  <rect width="512" height="512" rx="112" fill="#0b6268"/>
-  <rect x="104" y="78" width="304" height="356" rx="38" fill="#ffffff"/>
-  <path d="M158 174h196M158 238h142M158 302h196" stroke="#0b6268" stroke-width="24" stroke-linecap="round"/>
-  <circle cx="342" cy="356" r="78" fill="#e7f3f2" stroke="#0b6268" stroke-width="18"/>
-  <path d="M307 356l25 25 47-54" fill="none" stroke="#0b6268" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#0b6268"/><path d="M160 104h192a24 24 0 0 1 24 24v296l-56-36-64 36-64-36-56 36V128a24 24 0 0 1 24-24Z" fill="none" stroke="#fff" stroke-width="28" stroke-linejoin="round"/><path d="M208 196h96M208 260h96M208 324h56" stroke="#fff" stroke-width="24" stroke-linecap="round"/></svg>

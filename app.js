@@ -1,333 +1,242 @@
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./service-worker.js").catch(() => {
-      // Appen fungerer fortsat online, hvis en browser afviser offline-cachen.
-    });
-  });
-}
+if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js").catch(() => {}));
+
+const EMPLOYEE = { name: "Henrik D", area: "SYD" };
+const MOBILE_STORAGE_KEY = "udlaeg-henrik-mobile";
+const FINANCE_EMAIL = "oko@bomidtvest.dk";
+const TYPES = {
+  catering: { title: "Forplejning", requisition: "169439", label: "Hvad vedrører forplejningen?", placeholder: "Fx frokost ifm. besigtigelse", slug: "forplejning" },
+  caretaker_meeting: { title: "Viceværtmøder", requisition: "169440", label: "Hvem har deltaget?", placeholder: "Skriv deltagernes navne", slug: "vicevaertmoede" },
+  other: { title: "Andet", requisition: "", label: "Hvad vedrører udlægget?", placeholder: "Beskriv kort udlæggets formål", slug: "andet" },
+};
 
 const form = document.querySelector("#expense-form");
-const companyField = document.querySelector("#company-field");
-const departmentField = document.querySelector("#department-field");
-const meetingField = document.querySelector("#meeting-field");
-const descriptionField = document.querySelector("#description-field");
-const descriptionLabel = document.querySelector("#description-label");
 const receiptsInput = document.querySelector("#receipts");
 const receiptList = document.querySelector("#receipt-list");
 const resultPanel = document.querySelector("#result");
-const submitButton = form.querySelector("button[type='submit']");
+const submitButton = form.querySelector("button[type=submit]");
+let receipts = [];
+let pdfUrl = null;
 
-let selectedReceipts = [];
-let generatedPdfUrl = null;
-
-function updateEntityFields() {
-  const isCompany = form.elements.entityType.value === "company";
-  companyField.classList.toggle("is-hidden", !isCompany);
-  departmentField.classList.toggle("is-hidden", isCompany);
-  form.elements.company.required = isCompany;
-  form.elements.department.required = !isCompany;
+function loadSavedMobile() {
+  try { return localStorage.getItem(MOBILE_STORAGE_KEY) || ""; }
+  catch { return ""; }
 }
 
-function updateExpenseFields() {
-  const isFood = form.elements.expenseType.value === "food";
-  meetingField.classList.toggle("is-hidden", !isFood);
-  descriptionField.classList.toggle("is-hidden", isFood);
-  form.elements.meeting.required = isFood;
-  form.elements.description.required = !isFood;
-
-  if (!isFood) {
-    const config = expenseDescriptionConfig(form.elements.expenseType.value);
-    descriptionLabel.textContent = config.label;
-    form.elements.description.placeholder = config.placeholder;
-  }
+function saveMobile(value) {
+  try {
+    if (value) localStorage.setItem(MOBILE_STORAGE_KEY, value);
+    else localStorage.removeItem(MOBILE_STORAGE_KEY);
+  } catch {}
 }
 
-function expenseDescriptionConfig(value) {
-  return {
-    course: { label: "Hvilket kursus?", placeholder: "Fx BL-kursus i Aarhus" },
-    parking: { label: "Hvad var parkeringen i forbindelse med?", placeholder: "Fx BL-kursus d. 10/8" },
-    purchase: { label: "Hvad er købt?", placeholder: "Fx glas til kantinen" },
-    transport: { label: "Hvad var transporten i forbindelse med?", placeholder: "Fx tog til kursus i Aarhus" },
-    other: { label: "Hvad vedrører udlægget?", placeholder: "Beskriv kort udlæggets formål" },
-  }[value] || { label: "Hvad vedrører udlægget?", placeholder: "Vælg først type af udlæg" };
-}
-
-function renderReceipts() {
-  receiptList.replaceChildren();
-  selectedReceipts.forEach((entry, index) => {
-    const item = document.createElement("div");
-    item.className = "receipt-item";
-
-    const thumb = document.createElement("div");
-    thumb.className = "receipt-thumb";
-    thumb.style.backgroundImage = `url(${entry.previewUrl})`;
-    thumb.setAttribute("aria-label", `Billede ${index + 1}: ${entry.file.name}`);
-
-    const badge = document.createElement("span");
-    badge.className = "receipt-number";
-    badge.textContent = String(index + 1);
-
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.className = "remove-receipt";
-    remove.setAttribute("aria-label", `Fjern billede ${index + 1}`);
-    remove.textContent = "×";
-    remove.addEventListener("click", () => {
-      URL.revokeObjectURL(entry.previewUrl);
-      selectedReceipts.splice(index, 1);
-      renderReceipts();
-    });
-
-    item.append(thumb, badge, remove);
-    receiptList.append(item);
-  });
-}
-
-function loadImage(file) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const image = new Image();
-    image.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve(image);
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error(`Billedet “${file.name}” kunne ikke læses.`));
-    };
-    image.src = url;
-  });
-}
-
-async function normalizeImage(file) {
-  const image = await loadImage(file);
-  const maxEdge = 2200;
-  const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
-  const width = Math.max(1, Math.round(image.naturalWidth * scale));
-  const height = Math.max(1, Math.round(image.naturalHeight * scale));
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext("2d", { alpha: false });
-  context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, width, height);
-  context.drawImage(image, 0, 0, width, height);
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.86));
-  if (!blob) throw new Error(`Billedet “${file.name}” kunne ikke konverteres.`);
-  return { width, height, bytes: new Uint8Array(await blob.arrayBuffer()) };
-}
-
-function buildPdf(images) {
-  const encoder = new TextEncoder();
-  const chunks = [];
-  const offsets = [];
-  let byteLength = 0;
-
-  const pushBytes = (bytes) => {
-    chunks.push(bytes);
-    byteLength += bytes.byteLength;
-  };
-  const pushText = (text) => pushBytes(encoder.encode(text));
-  const startObject = (id) => {
-    offsets[id] = byteLength;
-    pushText(`${id} 0 obj\n`);
-  };
-
-  const pageIds = images.map((_, index) => 3 + index * 3);
-  const objectCount = 2 + images.length * 3;
-  pushText("%PDF-1.4\n%âãÏÓ\n");
-
-  startObject(1);
-  pushText("<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
-
-  startObject(2);
-  pushText(`<< /Type /Pages /Count ${images.length} /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] >>\nendobj\n`);
-
-  images.forEach((image, index) => {
-    const pageId = 3 + index * 3;
-    const imageId = pageId + 1;
-    const contentId = pageId + 2;
-    const pageWidth = 595.28;
-    const pageHeight = 841.89;
-    const margin = 24;
-    const drawScale = Math.min((pageWidth - margin * 2) / image.width, (pageHeight - margin * 2) / image.height);
-    const drawWidth = image.width * drawScale;
-    const drawHeight = image.height * drawScale;
-    const x = (pageWidth - drawWidth) / 2;
-    const y = (pageHeight - drawHeight) / 2;
-    const command = `q\n${drawWidth.toFixed(2)} 0 0 ${drawHeight.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)} cm\n/Im${index + 1} Do\nQ\n`;
-
-    startObject(pageId);
-    pushText(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /XObject << /Im${index + 1} ${imageId} 0 R >> >> /Contents ${contentId} 0 R >>\nendobj\n`);
-
-    startObject(imageId);
-    pushText(`<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${image.bytes.byteLength} >>\nstream\n`);
-    pushBytes(image.bytes);
-    pushText("\nendstream\nendobj\n");
-
-    startObject(contentId);
-    pushText(`<< /Length ${encoder.encode(command).byteLength} >>\nstream\n${command}endstream\nendobj\n`);
-  });
-
-  const xrefOffset = byteLength;
-  pushText(`xref\n0 ${objectCount + 1}\n`);
-  pushText("0000000000 65535 f \n");
-  for (let id = 1; id <= objectCount; id += 1) {
-    pushText(`${String(offsets[id]).padStart(10, "0")} 00000 n \n`);
-  }
-  pushText(`trailer\n<< /Size ${objectCount + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
-  return new Blob(chunks, { type: "application/pdf" });
-}
-
-function expenseTypeLabel(value) {
-  return {
-    food: "Forplejning",
-    course: "Kursus",
-    parking: "Parkering",
-    purchase: "Indkøb",
-    transport: "Transport",
-    other: "Andet",
-  }[value] || value;
-}
-
-function cleanFilename(value) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .toLowerCase();
-}
-
-function downloadFile(file) {
-  const url = URL.createObjectURL(file);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = file.name;
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1500);
-}
-
-function renderResult(pdfFile, subject, body, entityLabel) {
-  if (generatedPdfUrl) URL.revokeObjectURL(generatedPdfUrl);
-  generatedPdfUrl = URL.createObjectURL(pdfFile);
-  const sizeMb = (pdfFile.size / 1024 / 1024).toFixed(1).replace(".0", "");
-
-  resultPanel.classList.remove("is-hidden");
-  resultPanel.innerHTML = `
-    <div class="success-icon" aria-hidden="true">✓</div>
-    <p class="eyebrow">PDF klar</p>
-    <h2>Udlægget er samlet</h2>
-    <p class="result-copy">${selectedReceipts.length} ${selectedReceipts.length === 1 ? "billede" : "billeder"} er samlet i <strong>${pdfFile.name}</strong> (${sizeMb} MB). Mailudkastet er klar.</p>
-    <div class="result-summary"><span>${entityLabel}</span><span>${expenseTypeLabel(form.elements.expenseType.value)}</span><span>${form.elements.date.value}</span></div>
-    <button type="button" class="primary-button" id="share-pdf">Del PDF til mail</button>
-    <button type="button" class="secondary-button" id="open-mail">Download PDF og åbn mailudkast</button>
-    <a class="text-button" href="${generatedPdfUrl}" download="${pdfFile.name}">Download kun PDF</a>
-    <p class="result-help">På mobilen: Tryk “Del PDF til mail”, vælg Outlook eller Mail, vælg økonomi som modtager og tryk Send.</p>
-  `;
-
-  resultPanel.querySelector("#share-pdf").addEventListener("click", async () => {
-    if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [pdfFile] }))) {
-      try {
-        await navigator.share({
-          title: subject,
-          text: body,
-          files: [pdfFile],
-        });
-        return;
-      } catch (error) {
-        if (error.name === "AbortError") return;
-      }
-    }
-
-    downloadFile(pdfFile);
-    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body + "\n\nPDF-filen er downloadet og skal vedhæftes.")}`;
-  });
-
-  resultPanel.querySelector("#open-mail").addEventListener("click", () => {
-    downloadFile(pdfFile);
-    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body + "\n\nPDF-filen er downloadet og skal vedhæftes.")}`;
-  });
-
-  resultPanel.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-form.addEventListener("change", (event) => {
-  if (event.target.name === "entityType") updateEntityFields();
-  if (event.target.name === "expenseType") updateExpenseFields();
+form.elements.mobile.value = loadSavedMobile();
+form.elements.mobile.addEventListener("change", () => saveMobile(form.elements.mobile.value.trim()));
+form.elements.date.value = new Date().toISOString().slice(0, 10);
+form.elements.expenseType.addEventListener("change", () => {
+  const type = TYPES[form.elements.expenseType.value] || TYPES.other;
+  document.querySelector("#detail-label").textContent = type.label;
+  form.elements.detail.placeholder = type.placeholder;
 });
 
 receiptsInput.addEventListener("change", () => {
-  const additions = [...receiptsInput.files].map((file) => ({ file, previewUrl: URL.createObjectURL(file) }));
-  selectedReceipts.push(...additions);
+  receipts.push(...[...receiptsInput.files].map(file => ({ file, preview: URL.createObjectURL(file) })));
   receiptsInput.value = "";
   renderReceipts();
 });
 
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  updateEntityFields();
-  updateExpenseFields();
+function renderReceipts() {
+  receiptList.innerHTML = receipts.map((receipt, index) => `<div class="receipt-item"><div class="receipt-thumb" style="background-image:url('${receipt.preview}')" aria-label="Bon ${index + 1}"></div><span class="receipt-number">${index + 1}</span><button class="remove-receipt" type="button" data-remove="${index}" aria-label="Fjern bon ${index + 1}">×</button></div>`).join("");
+  receiptList.querySelectorAll("[data-remove]").forEach(button => button.addEventListener("click", () => {
+    const [removed] = receipts.splice(Number(button.dataset.remove), 1);
+    URL.revokeObjectURL(removed.preview);
+    renderReceipts();
+  }));
+}
 
+function parseAmount(value) {
+  let cleaned = String(value).trim().toLowerCase().replace(/\s/g, "").replace(/kr\.?/g, "");
+  if (cleaned.includes(",")) cleaned = cleaned.replace(/\./g, "").replace(",", ".");
+  else if (/^\d{1,3}(\.\d{3})+$/.test(cleaned)) cleaned = cleaned.replace(/\./g, "");
+  const number = Number(cleaned);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+const currency = value => new Intl.NumberFormat("da-DK", { style: "currency", currency: "DKK" }).format(value);
+const dateLabel = value => new Intl.DateTimeFormat("da-DK").format(new Date(`${value}T12:00:00`));
+
+function wrapText(context, value, x, y, maxWidth, lineHeight) {
+  const lines = [];
+  let line = "";
+  String(value).split(/\s+/).forEach(word => {
+    const next = line ? `${line} ${word}` : word;
+    if (line && context.measureText(next).width > maxWidth) { lines.push(line); line = word; }
+    else line = next;
+  });
+  if (line) lines.push(line);
+  lines.forEach((text, index) => context.fillText(text, x, y + index * lineHeight));
+  return y + Math.max(lines.length, 1) * lineHeight;
+}
+
+async function summaryImage(summary) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1240;
+  canvas.height = 1754;
+  const context = canvas.getContext("2d", { alpha: false });
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = "#0b6268";
+  context.fillRect(0, 0, canvas.width, 250);
+  context.textBaseline = "top";
+  context.fillStyle = "#fff";
+  context.font = "700 62px Arial";
+  context.fillText("Medarbejderudlæg", 96, 72);
+  context.font = "31px Arial";
+  context.fillText("Registrer udlæg", 96, 160);
+
+  const rows = [
+    ["Medarbejder/cvr:", `${summary.mobile} - ${EMPLOYEE.name}`],
+    ["Område:", EMPLOYEE.area],
+    ["Rekv. nr./vedrører:", summary.type],
+    [summary.detailLabel, summary.detail],
+    ["Beløb:", summary.amount],
+    ["Dato:", summary.date],
+    ["Antal bonner:", String(summary.count)],
+  ];
+  let y = 315;
+  rows.forEach(([label, value]) => {
+    context.fillStyle = "#607477";
+    context.font = "700 27px Arial";
+    context.fillText(label, 96, y);
+    y += 42;
+    context.fillStyle = "#153033";
+    context.font = "38px Arial";
+    y = wrapText(context, value, 96, y, 1048, 48) + 24;
+    context.strokeStyle = "#d9e3e2";
+    context.lineWidth = 2;
+    context.beginPath();
+    context.moveTo(96, y);
+    context.lineTo(1144, y);
+    context.stroke();
+    y += 27;
+  });
+  context.fillStyle = "#607477";
+  context.font = "28px Arial";
+  context.fillText("Efterfølgende sider indeholder bonner og kvitteringer.", 96, 1660);
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", .9));
+  return { width: canvas.width, height: canvas.height, bytes: new Uint8Array(await blob.arrayBuffer()) };
+}
+
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+    image.onload = () => { URL.revokeObjectURL(url); resolve(image); };
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error(`Billedet ${file.name} kunne ikke læses.`)); };
+    image.src = url;
+  });
+}
+
+async function receiptImage(file) {
+  const image = await loadImage(file);
+  const scale = Math.min(1, 2200 / Math.max(image.naturalWidth, image.naturalHeight));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const context = canvas.getContext("2d", { alpha: false });
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", .86));
+  return { width: canvas.width, height: canvas.height, bytes: new Uint8Array(await blob.arrayBuffer()) };
+}
+
+function pdfFromImages(images) {
+  const encoder = new TextEncoder();
+  const chunks = [];
+  const offsets = [];
+  let length = 0;
+  const bytes = part => { chunks.push(part); length += part.byteLength; };
+  const text = part => bytes(encoder.encode(part));
+  const object = id => { offsets[id] = length; text(`${id} 0 obj\n`); };
+  text("%PDF-1.4\n%âãÏÓ\n");
+  object(1); text("<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+  object(2); text(`<< /Type /Pages /Count ${images.length} /Kids [${images.map((_, i) => `${3 + i * 3} 0 R`).join(" ")}] >>\nendobj\n`);
+  images.forEach((image, index) => {
+    const page = 3 + index * 3, imageId = page + 1, content = page + 2;
+    const pageWidth = 595.28, pageHeight = 841.89, margin = 24;
+    const scale = Math.min((pageWidth - margin * 2) / image.width, (pageHeight - margin * 2) / image.height);
+    const width = image.width * scale, height = image.height * scale;
+    const command = `q\n${width.toFixed(2)} 0 0 ${height.toFixed(2)} ${((pageWidth - width) / 2).toFixed(2)} ${((pageHeight - height) / 2).toFixed(2)} cm\n/Im${index + 1} Do\nQ\n`;
+    object(page); text(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /XObject << /Im${index + 1} ${imageId} 0 R >> >> /Contents ${content} 0 R >>\nendobj\n`);
+    object(imageId); text(`<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${image.bytes.byteLength} >>\nstream\n`); bytes(image.bytes); text("\nendstream\nendobj\n");
+    object(content); text(`<< /Length ${encoder.encode(command).byteLength} >>\nstream\n${command}endstream\nendobj\n`);
+  });
+  const xref = length;
+  const count = 2 + images.length * 3;
+  text(`xref\n0 ${count + 1}\n0000000000 65535 f \n`);
+  for (let id = 1; id <= count; id++) text(`${String(offsets[id]).padStart(10, "0")} 00000 n \n`);
+  text(`trailer\n<< /Size ${count + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
+  return new Blob(chunks, { type: "application/pdf" });
+}
+
+function download(file) {
+  const url = URL.createObjectURL(file);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = file.name;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+function showResult(file, subject) {
+  const body = "Hej økonomi,\n\nVedhæftet er et medarbejderudlæg.";
+  if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+  pdfUrl = URL.createObjectURL(file);
+  resultPanel.innerHTML = `<div class="success-icon">✓</div><p class="eyebrow">PDF klar</p><h2>Udlægget er samlet</h2><p class="result-copy">PDF'en indeholder alle oplysninger og ${receipts.length} ${receipts.length === 1 ? "bon" : "bonner"}.</p><button class="primary-button" id="share">Del PDF til mail</button><button class="secondary-button" id="mail">Download PDF og åbn mail</button><a class="text-button" href="${pdfUrl}" download="${file.name}">Download kun PDF</a><p class="result-help">Mailen klargøres til ${FINANCE_EMAIL}.</p>`;
+  resultPanel.classList.remove("is-hidden");
+  const mailto = () => `mailto:${encodeURIComponent(FINANCE_EMAIL)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  resultPanel.querySelector("#share").addEventListener("click", async () => {
+    if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+      try { await navigator.share({ title: subject, text: body, files: [file] }); return; }
+      catch (error) { if (error.name === "AbortError") return; }
+    }
+    download(file); location.href = mailto();
+  });
+  resultPanel.querySelector("#mail").addEventListener("click", () => { download(file); location.href = mailto(); });
+  resultPanel.scrollIntoView({ behavior: "smooth" });
+}
+
+form.addEventListener("submit", async event => {
+  event.preventDefault();
+  const amount = parseAmount(form.elements.amount.value);
+  const mobile = form.elements.mobile.value.trim();
+  form.elements.amount.setCustomValidity(amount ? "" : "Indtast et gyldigt beløb, fx 245,50.");
   if (!form.reportValidity()) return;
-  if (selectedReceipts.length === 0) {
-    receiptsInput.setCustomValidity("Tilføj mindst ét billede af bonnen.");
+  if (!receipts.length) {
+    receiptsInput.setCustomValidity("Tilføj mindst én bon.");
     receiptsInput.reportValidity();
     receiptsInput.setCustomValidity("");
     return;
   }
-
+  const type = TYPES[form.elements.expenseType.value];
+  const typeText = type.requisition ? `${type.requisition} - ${type.title}` : type.title;
+  saveMobile(mobile);
   submitButton.disabled = true;
   submitButton.textContent = "Laver PDF …";
   resultPanel.classList.add("is-hidden");
-
   try {
-    const images = [];
-    for (let index = 0; index < selectedReceipts.length; index += 1) {
-      submitButton.textContent = `Behandler billede ${index + 1} af ${selectedReceipts.length} …`;
-      images.push(await normalizeImage(selectedReceipts[index].file));
+    const images = [await summaryImage({ mobile, type: typeText, detailLabel: type.label.replace("?", ":"), detail: form.elements.detail.value, amount: currency(amount), date: dateLabel(form.elements.date.value), count: receipts.length })];
+    for (const receipt of receipts) {
+      submitButton.textContent = `Behandler bon ${images.length} af ${receipts.length} …`;
+      images.push(await receiptImage(receipt.file));
     }
-
-    const pdfBlob = buildPdf(images);
-    const isCompany = form.elements.entityType.value === "company";
-    const entityLabel = isCompany
-      ? `Selskab ${form.elements.company.value}`
-      : `Afdeling ${form.elements.department.value}`;
-    const typeLabel = expenseTypeLabel(form.elements.expenseType.value);
-    const filename = `udlaeg-${cleanFilename(entityLabel)}-${form.elements.date.value}.pdf`;
-    const pdfFile = new File([pdfBlob], filename, { type: "application/pdf" });
-    const subject = `Udlæg – ${entityLabel} – ${typeLabel} – ${form.elements.date.value}`;
-    const details = form.elements.expenseType.value === "food"
-      ? `Møde: ${form.elements.meeting.value}`
-      : `${expenseDescriptionConfig(form.elements.expenseType.value).label.replace(/\?$/, "")}: ${form.elements.description.value}`;
-    const body = [
-      "Hej økonomi,",
-      "",
-      "Vedhæftet er et medarbejderudlæg.",
-      "",
-      `Medarbejder: ${form.elements.email.value}`,
-      entityLabel,
-      `Type: ${typeLabel}`,
-      details,
-      `Dato: ${form.elements.date.value}`,
-      `Antal bonsider: ${selectedReceipts.length}`,
-      "",
-      "Venlig hilsen",
-      form.elements.email.value,
-    ].join("\n");
-
-    renderResult(pdfFile, subject, body, entityLabel);
+    const file = new File([pdfFromImages(images)], `udlaeg-syd-${type.slug}-${form.elements.date.value}.pdf`, { type: "application/pdf" });
+    showResult(file, `Udlæg - ${EMPLOYEE.name} - ${typeText} - ${form.elements.date.value}`);
   } catch (error) {
+    resultPanel.innerHTML = `<h2>PDF'en kunne ikke laves</h2><p class="error-copy">${error.message || "Prøv igen."}</p>`;
     resultPanel.classList.remove("is-hidden");
-    resultPanel.innerHTML = `<h2>PDF’en kunne ikke laves</h2><p class="error-copy">${error.message || "Prøv igen med JPG- eller PNG-billeder."}</p>`;
-    resultPanel.scrollIntoView({ behavior: "smooth", block: "start" });
   } finally {
     submitButton.disabled = false;
     submitButton.textContent = "Lav PDF og klargør mail";
   }
 });
-
-updateEntityFields();
-updateExpenseFields();
